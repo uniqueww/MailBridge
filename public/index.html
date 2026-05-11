@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outlook 本地取件</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div>
+        <h1>Outlook 本地取件</h1>
+        <p>免站点登录，账号信息仅保存在当前浏览器。</p>
+      </div>
+      <div id="status" class="status">就绪</div>
+    </header>
+
+    <section class="layout">
+      <aside class="panel sidebar">
+        <div class="panel-head">
+          <h2>邮箱列表</h2>
+          <span id="accountCount" class="badge">0</span>
+        </div>
+        <button id="openImport" class="btn primary wide">批量导入邮箱</button>
+        <div id="accountList" class="account-list"></div>
+        <button id="clearAll" class="btn ghost wide">清空全部</button>
+      </aside>
+
+      <main class="panel content">
+        <div class="toolbar">
+          <input id="searchKeyword" class="input" placeholder="搜索关键词（主题/正文）">
+          <input id="searchSender" class="input" placeholder="发件人过滤（可选）">
+          <select id="fetchLimit" class="input short">
+            <option value="5">5 封</option>
+            <option value="10" selected>10 封</option>
+            <option value="20">20 封</option>
+            <option value="30">30 封</option>
+          </select>
+        </div>
+
+        <div class="toolbar second">
+          <label><input id="toggleImap" type="checkbox" checked> IMAP</label>
+          <label><input id="toggleGraph" type="checkbox" checked> Graph</label>
+          <button id="fetchSelected" class="btn primary">选中取件</button>
+          <button id="fetchAll" class="btn accent">全部取件</button>
+        </div>
+
+        <div id="progressWrap" class="progress-wrap hidden">
+          <div class="progress-meta">
+            <span id="progressText">取件中...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+        </div>
+
+        <div class="panel-head result-head">
+          <h2>取件结果</h2>
+          <span id="resultMeta" class="muted">暂无结果</span>
+        </div>
+        <div id="emailList" class="email-list empty">在左侧导入邮箱，然后开始取件。</div>
+      </main>
+    </section>
+  </div>
+
+  <div id="importModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="panel-head">
+        <h2>批量导入邮箱</h2>
+        <button id="closeImport" class="icon-btn">×</button>
+      </div>
+      <p class="tip">每行一个，格式：<code>账号----密码----clientid----刷新令牌</code></p>
+      <textarea id="importText" rows="10" class="textarea"></textarea>
+      <div id="importPreview" class="tip muted">支持 1 到 4 个短横线作为分隔符。</div>
+      <div class="modal-actions">
+        <button id="cancelImport" class="btn ghost">取消</button>
+        <button id="confirmImport" class="btn primary">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="detailModal" class="modal hidden">
+    <div class="modal-card large">
+      <div class="panel-head">
+        <h2 id="detailSubject">邮件详情</h2>
+        <button id="closeDetail" class="icon-btn">×</button>
+      </div>
+      <div id="detailMeta" class="tip"></div>
+      <div id="detailBody" class="detail-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
