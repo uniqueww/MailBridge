@@ -16,6 +16,7 @@ const state = {
   sessionToken: localStorage.getItem(SESSION_KEY) || "",
   admin: null,
   accounts: [],
+  selectedAccountIds: new Set(),
   shares: [],
   currentEmails: [],
   currentApp: localStorage.getItem(APP_KEY) || "chatgpt",
@@ -265,6 +266,7 @@ async function loadAdminWorkspace() {
   ]);
   state.accounts = accountsData.accounts || [];
   state.shares = sharesData.shares || [];
+  pruneSelectedAccountIds();
 }
 
 function renderAdminMode() {
@@ -616,6 +618,8 @@ function setExpiryValue(targetId, value) {
 }
 
 function renderAccounts(disabled = false) {
+  pruneSelectedAccountIds();
+
   if (!disabled) {
     renderAppTabs();
     if (els.appTabs) {
@@ -658,7 +662,7 @@ function renderAccounts(disabled = false) {
   els.accountList.innerHTML = filteredActive.length > 0
     ? filteredActive.map((account) => `
     <label class="account-item">
-      <input type="checkbox" data-role="fetch-account" data-id="${account.id}" ${disabled ? "checked disabled" : ""}>
+      <input type="checkbox" data-role="fetch-account" data-id="${account.id}" ${disabled ? "checked disabled" : (isAccountSelected(account.id) ? "checked" : "")}>
       <span class="${disabled ? "" : "account-copy"}" data-copy-email="${disabled ? "" : escapeAttr(account.email)}" title="${disabled ? escapeHtml(account.email) : `点击复制 ${escapeHtml(account.email)}`}">${escapeHtml(account.email)}</span>
       ${disabled
         ? '<span class="mini-tag">共享</span>'
@@ -676,7 +680,7 @@ function renderAccounts(disabled = false) {
     els.usedAccountList.innerHTML = filteredUsed.length > 0
       ? filteredUsed.map((account) => `
         <label class="account-item used-item">
-          <input type="checkbox" data-role="fetch-account" data-id="${account.id}">
+          <input type="checkbox" data-role="fetch-account" data-id="${account.id}" ${isAccountSelected(account.id) ? "checked" : ""}>
           <span class="account-copy" data-copy-email="${escapeAttr(account.email)}" title="点击复制 ${escapeHtml(account.email)}">${escapeHtml(account.email)}</span>
           <div class="account-actions used-actions">
             <span class="last-used">${escapeHtml(formatAppUsedAt(account, appKey))}</span>
@@ -726,6 +730,7 @@ function renderAccounts(disabled = false) {
 
   getAccountCheckboxes().forEach((box) => {
     box.addEventListener("change", () => {
+      setAccountSelected(box.dataset.id, box.checked);
       const item = box.closest(".account-item");
       if (item) {
         item.classList.toggle("selected", box.checked);
@@ -932,6 +937,7 @@ async function clearAllAccounts() {
     await api("/api/admin/accounts", { method: "DELETE" });
     state.accounts = [];
     state.shares = [];
+    clearSelectedAccounts();
     refreshAdminSummary();
     renderAccounts();
     renderShares();
@@ -957,10 +963,10 @@ async function deleteAccount(accountId) {
 }
 
 function getSelectedAccountIds() {
-  return getAccountCheckboxes()
-    .filter((box) => box.checked)
-    .map((box) => box.dataset.id)
-    .filter(Boolean);
+  pruneSelectedAccountIds();
+  return sortAccountsByActivity(state.accounts)
+    .map((item) => item.id)
+    .filter((id) => state.selectedAccountIds.has(String(id)));
 }
 
 function getAccountCheckboxes() {
@@ -968,6 +974,34 @@ function getAccountCheckboxes() {
     ...els.accountList.querySelectorAll('input[data-role="fetch-account"]'),
     ...(els.usedAccountList ? [...els.usedAccountList.querySelectorAll('input[data-role="fetch-account"]')] : []),
   ];
+}
+
+function isAccountSelected(accountId) {
+  return state.selectedAccountIds.has(String(accountId));
+}
+
+function setAccountSelected(accountId, selected) {
+  if (!accountId) {
+    return;
+  }
+  if (selected) {
+    state.selectedAccountIds.add(String(accountId));
+    return;
+  }
+  state.selectedAccountIds.delete(String(accountId));
+}
+
+function pruneSelectedAccountIds() {
+  const existingIds = new Set((state.accounts || []).map((account) => String(account.id)));
+  [...state.selectedAccountIds].forEach((id) => {
+    if (!existingIds.has(id)) {
+      state.selectedAccountIds.delete(id);
+    }
+  });
+}
+
+function clearSelectedAccounts() {
+  state.selectedAccountIds.clear();
 }
 
 function openShareModal() {
@@ -1108,6 +1142,7 @@ async function logoutAdmin() {
   clearSession();
   state.admin = null;
   state.accounts = [];
+  clearSelectedAccounts();
   state.shares = [];
   state.currentEmails = [];
   if (els.accountSearch) {
