@@ -1,4 +1,4 @@
-# Outlook 邮件工作台
+# MailBridge 邮件桥
 
 一个面向 Outlook 邮箱检索与取件场景的轻量化 Web 工具。
 

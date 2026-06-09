@@ -289,7 +289,7 @@ function renderAdminMode() {
   }
 
   els.heroTag.textContent = "管理员后台";
-  els.heroTitle.textContent = "Outlook 邮件工作台";
+  els.heroTitle.textContent = "MailBridge 邮件桥";
   els.heroDesc.textContent = "管理员可保存邮箱到服务器，并将一个或多个邮箱打包生成免登录分享地址。";
   setStatus(isLoggedIn ? `管理员 ${state.admin.username}` : "请登录管理员");
 

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="MailBridge icon">
+  <defs>
+    <linearGradient id="bg" x1="18" y1="14" x2="108" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="line" x1="30" y1="40" x2="98" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#eaf6ff"/>
+      <stop offset="1" stop-color="#bff7ec"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="#0d1116"/>
+  <rect x="12" y="12" width="104" height="104" rx="26" fill="url(#bg)"/>
+  <path d="M34 43h60c5 0 9 4 9 9v34c0 5-4 9-9 9H34c-5 0-9-4-9-9V52c0-5 4-9 9-9Z" fill="none" stroke="url(#line)" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M29 51l35 27 35-27" fill="none" stroke="url(#line)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M38 85c8-13 17-20 26-20s18 7 26 20" fill="none" stroke="#7ddc9b" stroke-width="7" stroke-linecap="round"/>
+  <path d="M44 85V73M64 85V65M84 85V73" fill="none" stroke="#7ddc9b" stroke-width="6" stroke-linecap="round"/>
+</svg>
