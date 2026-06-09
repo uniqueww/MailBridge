@@ -28,6 +28,40 @@ app.get("/api/health", async (_req, res) => {
   res.json({ ok: true, admins: store.admins.length });
 });
 
+app.post("/api/subscription/checkout", async (req, res) => {
+  try {
+    const payload = req.body || {};
+    validateAccessToken(payload.accessToken);
+    const result = buildSubscriptionCheckout(payload);
+    res.json({
+      success: true,
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: normalizeError(error),
+    });
+  }
+});
+
+app.post("/api/subscription/check", async (req, res) => {
+  try {
+    const payload = req.body || {};
+    validateAccessToken(payload.accessToken);
+    res.json({
+      success: true,
+      ...buildSubscriptionCheck(),
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: normalizeError(error),
+    });
+  }
+});
+
 app.post("/api/admin/register", async (req, res) => {
   res.status(403).json({
     success: false,
@@ -158,6 +192,34 @@ app.delete("/api/admin/accounts/:accountId", async (req, res) => {
   }
 });
 
+app.patch("/api/admin/accounts/:accountId/status", async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const accountId = String(req.params.accountId || "");
+    const status = normalizeAccountStatus(req.body && req.body.status);
+    const appKey = normalizeAppKey(req.body && req.body.appKey);
+    const account = (admin.accounts || []).find((item) => item.id === accountId);
+
+    if (!account) {
+      throw new Error("邮箱不存在");
+    }
+
+    updateAccountAppStatus(account, appKey, status);
+    await persistAdmin(admin);
+
+    res.json({
+      success: true,
+      account,
+      accounts: admin.accounts,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: normalizeError(error),
+    });
+  }
+});
+
 app.delete("/api/admin/accounts", async (req, res) => {
   try {
     const admin = await requireAdmin(req);
@@ -207,6 +269,7 @@ app.post("/api/admin/shares", async (req, res) => {
       name: String(name || "").trim() || `分享 ${new Date().toLocaleString("zh-CN")}`,
       accountIds: uniqueIds,
       createdAt: new Date().toISOString(),
+      expiresAt: buildShareExpiresAt(req.body && req.body.expiresInDays),
     };
 
     admin.shares = [share, ...(admin.shares || [])];
@@ -225,14 +288,40 @@ app.post("/api/admin/shares", async (req, res) => {
   }
 });
 
+app.patch("/api/admin/shares/:shareId/renew", async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const share = (admin.shares || []).find((item) => item.id === req.params.shareId);
+    if (!share) {
+      throw new Error("分享不存在");
+    }
+
+    share.expiresAt = buildShareExpiresAt(req.body && req.body.expiresInDays);
+    share.endedAt = null;
+    share.renewedAt = new Date().toISOString();
+    await persistAdmin(admin);
+
+    res.json({
+      success: true,
+      share: serializeShare(share, admin, req),
+      shares: serializeShares(admin, req),
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: normalizeError(error),
+    });
+  }
+});
+
 app.delete("/api/admin/shares/:shareId", async (req, res) => {
   try {
     const admin = await requireAdmin(req);
-    const before = admin.shares.length;
-    admin.shares = admin.shares.filter((item) => item.id !== req.params.shareId);
-    if (admin.shares.length === before) {
+    const share = (admin.shares || []).find((item) => item.id === req.params.shareId);
+    if (!share) {
       throw new Error("分享不存在");
     }
+    share.endedAt = new Date().toISOString();
     await persistAdmin(admin);
     res.json({
       success: true,
@@ -251,9 +340,12 @@ app.post("/api/admin/fetch", async (req, res) => {
     const admin = await requireAdmin(req);
     const accounts = pickAccountsByIds(admin.accounts, req.body && req.body.accountIds);
     const result = await fetchForAccounts(accounts, req.body || {});
+    touchAccounts(accounts);
+    await persistAdmin(admin);
     res.json({
       success: true,
       ...result,
+      accounts: admin.accounts,
     });
   } catch (error) {
     res.status(400).json({
@@ -283,6 +375,8 @@ app.post("/api/share/:shareId/fetch", async (req, res) => {
     const { admin, share } = await requireShare(req.params.shareId);
     const accounts = pickAccountsByIds(admin.accounts, share.accountIds);
     const result = await fetchForAccounts(accounts, req.body || {});
+    touchAccounts(accounts);
+    await persistAdmin(admin);
     res.json({
       success: true,
       ...result,
@@ -443,6 +537,9 @@ async function requireShare(shareId) {
   for (const admin of store.admins) {
     const share = (admin.shares || []).find((item) => item.id === shareId);
     if (share) {
+      if (!isShareActive(share)) {
+        throw new Error("分享不存在或已失效");
+      }
       return { admin, share };
     }
   }
@@ -496,15 +593,40 @@ function serializeShares(admin, req) {
 function serializeShare(share, admin, req) {
   const accountMap = new Map((admin.accounts || []).map((item) => [item.id, item]));
   const sharedAccounts = share.accountIds.map((id) => accountMap.get(id)).filter(Boolean);
+  const status = getShareStatus(share);
   return {
     id: share.id,
     name: share.name,
     createdAt: share.createdAt,
+    expiresAt: share.expiresAt || null,
+    endedAt: share.endedAt || null,
+    renewedAt: share.renewedAt || null,
+    status,
+    isActive: status === "active",
     accountIds: share.accountIds,
     accountEmails: sharedAccounts.map((account) => account.email),
     accountPasswords: sharedAccounts.map((account) => account.password || ""),
     url: buildShareUrl(req, share.id),
   };
+}
+
+function buildShareExpiresAt(value) {
+  const days = clamp(Number(value || 7), 1, 365);
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function getShareStatus(share) {
+  if (share.endedAt) {
+    return "ended";
+  }
+  if (share.expiresAt && new Date(share.expiresAt).getTime() <= Date.now()) {
+    return "expired";
+  }
+  return "active";
+}
+
+function isShareActive(share) {
+  return getShareStatus(share) === "active";
 }
 
 function serializeSharePublic(share, admin, req) {
@@ -548,6 +670,7 @@ async function loadStore() {
   if (!storeCache.admins) {
     storeCache.admins = [];
   }
+  normalizeStore(storeCache);
   await ensureBuiltInAdmin(storeCache);
   return storeCache;
 }
@@ -578,6 +701,110 @@ async function ensureBuiltInAdmin(store) {
     shares: [],
   });
   await saveStore(store);
+}
+
+function normalizeStore(store) {
+  if (!Array.isArray(store.admins)) {
+    store.admins = [];
+    return;
+  }
+
+  store.admins.forEach((admin) => {
+    if (!Array.isArray(admin.accounts)) {
+      admin.accounts = [];
+    }
+    if (!Array.isArray(admin.shares)) {
+      admin.shares = [];
+    }
+    admin.accounts.forEach((account) => {
+      account.status = normalizeAccountStatus(account.status);
+      if (!account.createdAt) {
+        account.createdAt = new Date().toISOString();
+      }
+      if (!account.appUsage || typeof account.appUsage !== "object" || Array.isArray(account.appUsage)) {
+        account.appUsage = {};
+      }
+      if (account.status === "used" && !isAppUsed(account, "chatgpt")) {
+        account.appUsage.chatgpt = {
+          status: "used",
+          usedAt: account.usedAt || account.lastUsedAt || new Date().toISOString(),
+        };
+      }
+      Object.keys(account.appUsage).forEach((key) => {
+        const usage = account.appUsage[key] || {};
+        let normalizedKey = null;
+        try {
+          normalizedKey = normalizeAppKey(key);
+        } catch {
+          delete account.appUsage[key];
+          return;
+        }
+        if (normalizedKey !== key) {
+          delete account.appUsage[key];
+        }
+        account.appUsage[normalizedKey] = {
+          status: normalizeAccountStatus(usage.status),
+          usedAt: normalizeAccountStatus(usage.status) === "used" ? usage.usedAt || account.usedAt || null : null,
+        };
+      });
+      account.status = hasAnyUsedApp(account) ? "used" : "active";
+      account.usedAt = getLatestAccountUsageAt(account);
+      if (!account.lastUsedAt) {
+        account.lastUsedAt = account.usedAt || null;
+      }
+    });
+  });
+}
+
+function normalizeAccountStatus(status) {
+  return status === "used" ? "used" : "active";
+}
+
+function normalizeAppKey(value) {
+  const key = String(value || "chatgpt").trim().toLowerCase();
+  if (!/^[a-z0-9_-]{2,32}$/.test(key)) {
+    throw new Error("App 标识不正确");
+  }
+  return key;
+}
+
+function updateAccountAppStatus(account, appKey, status) {
+  const now = new Date().toISOString();
+  if (!account.appUsage || typeof account.appUsage !== "object" || Array.isArray(account.appUsage)) {
+    account.appUsage = {};
+  }
+
+  account.appUsage[appKey] = {
+    status,
+    usedAt: status === "used" ? now : null,
+  };
+  account.status = hasAnyUsedApp(account) ? "used" : "active";
+  account.usedAt = getLatestAccountUsageAt(account);
+  account.lastUsedAt = now;
+}
+
+function touchAccounts(accounts) {
+  const now = new Date().toISOString();
+  (accounts || []).forEach((account) => {
+    account.lastUsedAt = now;
+  });
+}
+
+function isAppUsed(account, appKey) {
+  const usage = account && account.appUsage && account.appUsage[appKey];
+  return usage && usage.status === "used";
+}
+
+function hasAnyUsedApp(account) {
+  return Object.values((account && account.appUsage) || {}).some((usage) => usage && usage.status === "used");
+}
+
+function getLatestAccountUsageAt(account) {
+  const dates = Object.values((account && account.appUsage) || {})
+    .map((usage) => usage && usage.usedAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a));
+  return dates[0] || null;
 }
 
 function parseImportText(text) {
@@ -617,6 +844,10 @@ function parseImportText(text) {
       password,
       clientId,
       refreshToken,
+      status: "active",
+      usedAt: null,
+      lastUsedAt: null,
+      appUsage: {},
       createdAt: new Date().toISOString(),
     });
   });
@@ -630,6 +861,69 @@ function validateRequired(payload, keys) {
       throw new Error(`缺少必要字段: ${key}`);
     }
   }
+}
+
+function validateAccessToken(value) {
+  const token = String(value || "").trim();
+  if (!token.startsWith("eyJ")) {
+    throw new Error("Access Token 格式不正确");
+  }
+  return token;
+}
+
+function buildSubscriptionCheckout(payload) {
+  const planName = String(payload.planName || "chatgptplusplan");
+  const uiMode = String(payload.uiMode || "custom");
+  const region = planName === "chatgptteamplan" ? "US" : String(payload.region || "US");
+  const id = createId().slice(0, 24);
+  const link = uiMode === "hosted"
+    ? `https://chatgpt.com/payments/checkout/${id}?plan=${encodeURIComponent(planName)}&region=${encodeURIComponent(region)}`
+    : `https://pay.openai.com/c/${id}`;
+
+  return {
+    link,
+    raw: {
+      mode: uiMode,
+      planName,
+      region,
+      workspaceName: String(payload.workspaceName || "") || null,
+      seatQuantity: Number(payload.seatQuantity || 0) || null,
+      note: "本地集成版本返回演示链接，不会转发或保存 Token。",
+    },
+  };
+}
+
+function buildSubscriptionCheck() {
+  const renewDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 28).toISOString();
+  return {
+    accounts: {
+      default: {
+        account: {
+          account_id: "acct_demo_local",
+          plan_type: "plus",
+          is_delinquent: false,
+          processor: {
+            a001: {
+              has_transaction_history: true,
+              has_customer_object: true,
+            },
+          },
+        },
+        entitlement: {
+          has_active_subscription: true,
+          subscription_plan: "plus",
+          subscription_id: "sub_demo_local",
+          expires_at: renewDate,
+          renews_at: renewDate,
+          billing_currency: "USD",
+        },
+        last_active_subscription: {
+          purchase_origin_platform: "chatgpt_web",
+          will_renew: true,
+        },
+      },
+    },
+  };
 }
 
 function normalizeUsername(value) {

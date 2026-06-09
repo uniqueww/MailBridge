@@ -7,7 +7,7 @@
   <script>
     (function() {
       var isFile = location.protocol === "file:";
-      var cssHref = isFile ? "./style.css?v=20260512g" : "/style.css?v=20260512g";
+      var cssHref = isFile ? "./style.css?v=20260609a" : "/style.css?v=20260609a";
       document.write('<link rel="stylesheet" href="' + cssHref + '">');
     })();
   </script>
@@ -15,12 +15,16 @@
 <body>
   <div class="shell">
     <header class="hero">
-      <div>
+      <div class="brand-block">
         <p class="eyebrow" id="heroTag">管理员后台</p>
         <h1 id="heroTitle">Outlook 邮件工作台</h1>
         <p id="heroDesc">管理员可保存邮箱到服务器，并将一个或多个邮箱打包生成免登录分享地址。</p>
       </div>
       <div class="hero-side">
+        <div id="modeSwitch" class="mode-switch">
+          <button class="mode-tab active" type="button" data-mode="mail">邮件工作台</button>
+          <button class="mode-tab" type="button" data-mode="billing">订阅工具</button>
+        </div>
         <div id="status" class="status">就绪</div>
         <button id="logoutBtn" class="btn ghost hidden" type="button">退出管理员</button>
       </div>
@@ -36,7 +40,20 @@
           <input id="loginUsername" class="input" placeholder="管理员账号">
           <input id="loginPassword" class="input" type="password" placeholder="管理员密码">
           <button id="loginBtn" class="btn primary wide" type="button">登录</button>
-          <p class="tip">支持直接按 Enter 登录。当前版本仅开放内置管理员登录，不提供网页注册入口。</p>
+          <p class="tip">支持直接按 Enter 登录。当前版本仅开放内置管理员登录。</p>
+        </div>
+      </article>
+      <article class="panel intro-card">
+        <div>
+          <h2>邮箱池与免登录分享</h2>
+          <p class="tip">导入邮箱后可批量取件，并把选中的邮箱生成有有效期的分享链接。</p>
+        </div>
+        <div class="surface-preview" aria-hidden="true">
+          <div class="preview-head"><span></span><span></span></div>
+          <div class="preview-row strong"></div>
+          <div class="preview-row"></div>
+          <div class="preview-row short"></div>
+          <div class="preview-grid"><span></span><span></span></div>
         </div>
       </article>
     </section>
@@ -53,7 +70,26 @@
           <button id="openImport" class="btn primary wide" type="button">批量导入邮箱</button>
           <button id="createShare" class="btn accent wide" type="button">分享选中邮箱</button>
         </div>
+        <input id="accountSearch" class="input account-search" placeholder="搜索邮箱">
+        <div class="app-filter hidden">
+          <div class="list-head compact">
+            <h3>使用状态</h3>
+            <span id="currentAppTag" class="mini-tag">ChatGPT</span>
+          </div>
+          <div id="appTabs" class="app-tabs"></div>
+        </div>
+        <div class="list-head compact">
+          <h3>待使用</h3>
+          <span id="activeAccountCount" class="mini-tag">0</span>
+        </div>
         <div id="accountList" class="account-list"></div>
+        <div id="usedSection" class="account-section used-section hidden">
+          <div class="list-head compact">
+            <h3>已使用</h3>
+            <span id="usedAccountCount" class="mini-tag">0</span>
+          </div>
+          <div id="usedAccountList" class="account-list"></div>
+        </div>
         <button id="clearAll" class="btn ghost wide" type="button">清空我的邮箱</button>
       </aside>
 
@@ -76,14 +112,12 @@
               <option value="30">30 封</option>
             </select>
           </div>
-
           <div class="toolbar second">
             <label><input id="toggleImap" type="checkbox" checked> IMAP</label>
             <label><input id="toggleGraph" type="checkbox" checked> Graph</label>
             <button id="fetchSelected" class="btn primary" type="button">选中取件</button>
             <button id="fetchAll" class="btn accent" type="button">全部取件</button>
           </div>
-
           <div id="progressWrap" class="progress-wrap hidden">
             <div class="progress-meta">
               <span id="progressText">取件中...</span>
@@ -93,7 +127,6 @@
               <div id="progressBar" class="progress-bar"></div>
             </div>
           </div>
-
           <div class="panel-head result-head">
             <h2>取件结果</h2>
             <span id="resultMeta" class="muted">暂无结果</span>
@@ -109,6 +142,68 @@
           <div id="shareList" class="share-list empty">选中邮箱后生成分享地址，普通用户可免登录访问。</div>
         </section>
       </main>
+    </section>
+
+    <section id="billingSection" class="billing-layout hidden">
+      <article class="panel token-panel">
+        <div class="panel-head">
+          <h2>Access Token</h2>
+          <span class="badge">本地处理</span>
+        </div>
+        <textarea id="billingTokenInput" class="textarea token-textarea" placeholder="粘贴 session JSON 或 Access Token"></textarea>
+        <div id="billingTokenStatus" class="token-status muted">请在上方输入内容</div>
+      </article>
+      <div class="billing-tabs">
+        <button class="billing-tab active" type="button" data-billing-tab="checkout">生成订阅链接</button>
+        <button class="billing-tab" type="button" data-billing-tab="source">查询订阅来源</button>
+      </div>
+      <article id="billingCheckoutPanel" class="panel">
+        <div class="panel-head">
+          <h2>订阅链接</h2>
+          <span class="badge">Checkout</span>
+        </div>
+        <div class="flow">
+          <fieldset class="choice-group">
+            <legend>套餐</legend>
+            <div class="choice-grid three">
+              <button class="choice active" type="button" data-billing-choice="plan" data-value="chatgptplusplan"><span>Plus</span><small>个人 Plus</small></button>
+              <button class="choice" type="button" data-billing-choice="plan" data-value="chatgptproplan"><span>Pro</span><small>个人 Pro</small></button>
+              <button class="choice" type="button" data-billing-choice="plan" data-value="chatgptteamplan"><span>Team</span><small>团队套餐</small></button>
+            </div>
+          </fieldset>
+          <fieldset class="choice-group">
+            <legend>打开方式</legend>
+            <div class="choice-grid two">
+              <button class="choice active" type="button" data-billing-choice="uiMode" data-value="custom"><span>支付页</span><small>pay.openai.com</small></button>
+              <button class="choice" type="button" data-billing-choice="uiMode" data-value="hosted"><span>托管页</span><small>chatgpt.com</small></button>
+            </div>
+          </fieldset>
+          <fieldset id="billingRegionBlock" class="choice-group">
+            <legend>地区</legend>
+            <div class="choice-grid three">
+              <button class="choice active" type="button" data-billing-choice="region" data-value="US"><span>US</span><small>美元</small></button>
+              <button class="choice" type="button" data-billing-choice="region" data-value="GB"><span>GB</span><small>英镑</small></button>
+              <button class="choice" type="button" data-billing-choice="region" data-value="EU"><span>EU</span><small>欧元</small></button>
+            </div>
+          </fieldset>
+          <div id="billingTeamBlock" class="team-grid hidden">
+            <label><span>团队名称</span><input id="billingWorkspaceName" class="input" placeholder="Workspace"></label>
+            <label><span>席位数</span><input id="billingSeatQuantity" class="input" type="number" min="2" value="2"></label>
+          </div>
+          <button id="billingGenerateButton" class="btn primary" type="button">生成订阅链接</button>
+          <div id="billingCheckoutOutput" class="output hidden"></div>
+        </div>
+      </article>
+      <article id="billingSourcePanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>订阅来源</h2>
+          <span class="badge">Account</span>
+        </div>
+        <div class="flow">
+          <button id="billingSourceButton" class="btn primary" type="button">查询订阅来源</button>
+          <div id="billingSourceOutput" class="output hidden"></div>
+        </div>
+      </article>
     </section>
   </div>
 
@@ -135,11 +230,53 @@
         <button id="closeShareModal" class="icon-btn" type="button">×</button>
       </div>
       <p class="tip">当前会分享已勾选的邮箱，普通用户打开链接后可直接取件。</p>
-      <input id="shareName" class="input" placeholder="分享名称（可选）">
+      <div class="stack">
+        <input id="shareName" class="input" placeholder="分享名称（可选）">
+        <label>
+          <span>有效期</span>
+          <input id="shareExpires" type="hidden" value="7">
+          <div class="expiry-grid" data-expiry-target="shareExpires">
+            <button class="expiry-option" type="button" data-value="1">1 天</button>
+            <button class="expiry-option" type="button" data-value="3">3 天</button>
+            <button class="expiry-option active" type="button" data-value="7">7 天</button>
+            <button class="expiry-option" type="button" data-value="14">14 天</button>
+            <button class="expiry-option" type="button" data-value="30">30 天</button>
+            <button class="expiry-option" type="button" data-value="90">90 天</button>
+            <button class="expiry-option" type="button" data-value="365">365 天</button>
+          </div>
+        </label>
+      </div>
       <div id="shareSelection" class="selection-box"></div>
       <div class="modal-actions">
         <button id="cancelShare" class="btn ghost" type="button">取消</button>
         <button id="confirmShare" class="btn accent" type="button">生成分享</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="renewModal" class="modal hidden">
+    <div class="modal-card small">
+      <div class="panel-head">
+        <h2>续期分享</h2>
+        <button id="closeRenewModal" class="icon-btn" type="button">×</button>
+      </div>
+      <p id="renewShareName" class="tip renew-summary">选择新的有效期，过期或已终止的分享会恢复为可访问。</p>
+      <label>
+        <span>续期时长</span>
+        <input id="renewExpires" type="hidden" value="7">
+        <div class="expiry-grid" data-expiry-target="renewExpires">
+          <button class="expiry-option" type="button" data-value="1">1 天</button>
+          <button class="expiry-option" type="button" data-value="3">3 天</button>
+          <button class="expiry-option active" type="button" data-value="7">7 天</button>
+          <button class="expiry-option" type="button" data-value="14">14 天</button>
+          <button class="expiry-option" type="button" data-value="30">30 天</button>
+          <button class="expiry-option" type="button" data-value="90">90 天</button>
+          <button class="expiry-option" type="button" data-value="365">365 天</button>
+        </div>
+      </label>
+      <div class="modal-actions">
+        <button id="cancelRenew" class="btn ghost" type="button">取消</button>
+        <button id="confirmRenew" class="btn accent" type="button">确认续期</button>
       </div>
     </div>
   </div>
@@ -159,7 +296,7 @@
   <script>
     (function() {
       var isFile = location.protocol === "file:";
-      var scriptSrc = isFile ? "./app.js?v=20260512g" : "/app.js?v=20260512g";
+      var scriptSrc = isFile ? "./app.js?v=20260609a" : "/app.js?v=20260609a";
       document.write('<script src="' + scriptSrc + '"><\/script>');
     })();
   </script>
